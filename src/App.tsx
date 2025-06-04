@@ -8,6 +8,7 @@ import QuotationsPage from "./pages/QuotationsPage";
 import Clients from "./components/dashboard/Clients";
 import Reports from "./components/dashboard/Reports";
 import Settings from "./components/dashboard/Settings";
+import { Toaster } from "@/components/ui/toaster";
 import routes from "tempo-routes";
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
           <Route path="/settings" element={<Settings />} />
         </Routes>
         {import.meta.env.VITE_TEMPO === "true" && useRoutes(routes)}
+        <Toaster />
       </>
     </Suspense>
   );

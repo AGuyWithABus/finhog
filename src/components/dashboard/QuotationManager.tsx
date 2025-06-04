@@ -137,8 +137,8 @@ const QuotationManager = () => {
   const [sendEmail, setSendEmail] = useState("");
   const [sendMessage, setSendMessage] = useState("");
 
-  // Mock data
-  const quotations: Quotation[] = [
+  // Mock data with state management
+  const [quotations, setQuotations] = useState<Quotation[]>([
     {
       id: "QT-001",
       client: "Acme Corp",
@@ -184,7 +184,7 @@ const QuotationManager = () => {
       status: "declined",
       description: "Data compression solution",
     },
-  ];
+  ]);
 
   const clients: Client[] = [
     {
@@ -290,7 +290,11 @@ const QuotationManager = () => {
       id: `QT-${String(quotations.length + 1).padStart(3, "0")}`,
       status: "draft" as const,
       date: new Date().toISOString().split("T")[0],
+      expiryDate: new Date(new Date().setDate(new Date().getDate() + 30))
+        .toISOString()
+        .split("T")[0],
     };
+    setQuotations((prev) => [...prev, newQuotation]);
     toast({
       title: "Quotation Duplicated",
       description: `Quotation ${newQuotation.id} has been created as a draft.`,
@@ -312,6 +316,12 @@ const QuotationManager = () => {
 
   const confirmSendQuotation = () => {
     if (selectedQuotation) {
+      // Update quotation status to 'sent'
+      setQuotations((prev) =>
+        prev.map((q) =>
+          q.id === selectedQuotation.id ? { ...q, status: "sent" as const } : q,
+        ),
+      );
       toast({
         title: "Quotation Sent",
         description: `Quotation ${selectedQuotation.id} has been sent to ${selectedQuotation.client}.`,
@@ -325,6 +335,22 @@ const QuotationManager = () => {
 
   const confirmEditQuotation = () => {
     if (selectedQuotation) {
+      const totalAmount = editQuotationItems.reduce(
+        (sum, item) => sum + item.amount,
+        0,
+      );
+      setQuotations((prev) =>
+        prev.map((q) =>
+          q.id === selectedQuotation.id
+            ? {
+                ...q,
+                amount: totalAmount,
+                description:
+                  editQuotationItems[0]?.description || q.description,
+              }
+            : q,
+        ),
+      );
       toast({
         title: "Quotation Updated",
         description: `Quotation ${selectedQuotation.id} has been successfully updated.`,
@@ -337,6 +363,9 @@ const QuotationManager = () => {
 
   const confirmDeleteQuotation = () => {
     if (selectedQuotation) {
+      setQuotations((prev) =>
+        prev.filter((q) => q.id !== selectedQuotation.id),
+      );
       toast({
         title: "Quotation Deleted",
         description: `Quotation ${selectedQuotation.id} has been permanently deleted.`,
@@ -539,6 +568,7 @@ const QuotationManager = () => {
                 <Input
                   id="quotationNumber"
                   defaultValue={`QT-${String(quotations.length + 1).padStart(3, "0")}`}
+                  disabled
                 />
               </div>
 
@@ -768,6 +798,32 @@ const QuotationManager = () => {
             <Button
               variant="outline"
               onClick={() => {
+                // Create new quotation as draft
+                const totalAmount = quotationItems.reduce(
+                  (sum, item) => sum + item.amount,
+                  0,
+                );
+                const newQuotation: Quotation = {
+                  id: `QT-${String(quotations.length + 1).padStart(3, "0")}`,
+                  client: "Selected Client", // This would come from the form
+                  amount: totalAmount,
+                  date:
+                    selectedDate?.toISOString().split("T")[0] ||
+                    new Date().toISOString().split("T")[0],
+                  expiryDate:
+                    expiryDate?.toISOString().split("T")[0] ||
+                    new Date(new Date().setDate(new Date().getDate() + 30))
+                      .toISOString()
+                      .split("T")[0],
+                  status: "draft",
+                  description:
+                    quotationItems[0]?.description || "New quotation",
+                };
+                setQuotations((prev) => [newQuotation, ...prev]);
+                toast({
+                  title: "Quotation Saved as Draft",
+                  description: `Quotation ${newQuotation.id} has been saved as a draft.`,
+                });
                 setCreateDialogOpen(false);
                 setQuotationItems([
                   {
@@ -783,6 +839,32 @@ const QuotationManager = () => {
             </Button>
             <Button
               onClick={() => {
+                // Create new quotation
+                const totalAmount = quotationItems.reduce(
+                  (sum, item) => sum + item.amount,
+                  0,
+                );
+                const newQuotation: Quotation = {
+                  id: `QT-${String(quotations.length + 1).padStart(3, "0")}`,
+                  client: "Selected Client", // This would come from the form
+                  amount: totalAmount,
+                  date:
+                    selectedDate?.toISOString().split("T")[0] ||
+                    new Date().toISOString().split("T")[0],
+                  expiryDate:
+                    expiryDate?.toISOString().split("T")[0] ||
+                    new Date(new Date().setDate(new Date().getDate() + 30))
+                      .toISOString()
+                      .split("T")[0],
+                  status: "sent",
+                  description:
+                    quotationItems[0]?.description || "New quotation",
+                };
+                setQuotations((prev) => [newQuotation, ...prev]);
+                toast({
+                  title: "Quotation Created & Sent",
+                  description: `Quotation ${newQuotation.id} has been created and sent.`,
+                });
                 setCreateDialogOpen(false);
                 setQuotationItems([
                   {

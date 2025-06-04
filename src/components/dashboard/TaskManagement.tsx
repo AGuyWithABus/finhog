@@ -27,6 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 import {
   CalendarIcon,
@@ -56,15 +57,36 @@ interface Project {
 }
 
 const TaskManagement = () => {
+  const { toast } = useToast();
   const [view, setView] = useState<"board" | "list">("board");
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date(),
   );
   const [newTaskDialogOpen, setNewTaskDialogOpen] = useState(false);
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
 
-  // Mock data
-  const projects: Project[] = [
+  // Form states for new task
+  const [newTaskForm, setNewTaskForm] = useState({
+    title: "",
+    description: "",
+    project: "",
+    priority: "medium" as "low" | "medium" | "high",
+    dueDate: new Date(),
+  });
+
+  // Form states for new project
+  const [newProjectForm, setNewProjectForm] = useState({
+    name: "",
+    description: "",
+  });
+
+  // State for projects and tasks
+  const [projects, setProjects] = useState<Project[]>([
     {
       id: "1",
       name: "Website Redesign",
@@ -119,17 +141,160 @@ const TaskManagement = () => {
         },
       ],
     },
-  ];
+  ]);
 
   // Get all tasks from all projects
   const allTasks = projects.flatMap((project) => project.tasks);
 
+  // Apply filters and search
+  const filteredTasks = allTasks.filter((task) => {
+    const matchesSearch =
+      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus =
+      statusFilter === "all" || task.status === statusFilter;
+    const matchesPriority =
+      priorityFilter === "all" || task.priority === priorityFilter;
+    const matchesProject =
+      projectFilter === "all" || task.project === projectFilter;
+
+    return matchesSearch && matchesStatus && matchesPriority && matchesProject;
+  });
+
   // Filter tasks by status
-  const todoTasks = allTasks.filter((task) => task.status === "todo");
-  const inProgressTasks = allTasks.filter(
+  const todoTasks = filteredTasks.filter((task) => task.status === "todo");
+  const inProgressTasks = filteredTasks.filter(
     (task) => task.status === "in-progress",
   );
-  const completedTasks = allTasks.filter((task) => task.status === "completed");
+  const completedTasks = filteredTasks.filter(
+    (task) => task.status === "completed",
+  );
+
+  // Helper functions
+  const generateId = () => Date.now().toString();
+
+  const handleCreateTask = () => {
+    if (!newTaskForm.title.trim()) {
+      toast({
+        title: "Error",
+        description: "Task title is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!newTaskForm.project) {
+      toast({
+        title: "Error",
+        description: "Please select a project",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newTask: Task = {
+      id: generateId(),
+      title: newTaskForm.title,
+      description: newTaskForm.description,
+      project: newTaskForm.project,
+      status: "todo",
+      priority: newTaskForm.priority,
+      dueDate: newTaskForm.dueDate,
+      completed: false,
+    };
+
+    setProjects((prevProjects) =>
+      prevProjects.map((project) =>
+        project.id === newTaskForm.project
+          ? { ...project, tasks: [...project.tasks, newTask] }
+          : project,
+      ),
+    );
+
+    // Reset form
+    setNewTaskForm({
+      title: "",
+      description: "",
+      project: "",
+      priority: "medium",
+      dueDate: new Date(),
+    });
+    setSelectedDate(new Date());
+    setNewTaskDialogOpen(false);
+
+    toast({
+      title: "Success",
+      description: "Task created successfully",
+    });
+  };
+
+  const handleCreateProject = () => {
+    if (!newProjectForm.name.trim()) {
+      toast({
+        title: "Error",
+        description: "Project name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newProject: Project = {
+      id: generateId(),
+      name: newProjectForm.name,
+      description: newProjectForm.description,
+      tasks: [],
+    };
+
+    setProjects((prevProjects) => [...prevProjects, newProject]);
+
+    // Reset form
+    setNewProjectForm({
+      name: "",
+      description: "",
+    });
+    setNewProjectDialogOpen(false);
+
+    toast({
+      title: "Success",
+      description: "Project created successfully",
+    });
+  };
+
+  const handleToggleTaskComplete = (taskId: string) => {
+    setProjects((prevProjects) =>
+      prevProjects.map((project) => ({
+        ...project,
+        tasks: project.tasks.map((task) =>
+          task.id === taskId
+            ? {
+                ...task,
+                completed: !task.completed,
+                status: !task.completed ? "completed" : "todo",
+              }
+            : task,
+        ),
+      })),
+    );
+
+    const task = allTasks.find((t) => t.id === taskId);
+    if (task) {
+      toast({
+        title: "Success",
+        description: `Task &quot;${task.title}&quot; marked as ${!task.completed ? "completed" : "incomplete"}`,
+      });
+    }
+  };
+
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setProjectFilter("all");
+    setSearchQuery("");
+    toast({
+      title: "Filters cleared",
+      description: "All filters have been reset",
+    });
+  };
 
   const renderTaskCard = (task: Task) => {
     const priorityColor = {
@@ -143,7 +308,11 @@ const TaskManagement = () => {
         <CardContent className="p-4">
           <div className="flex items-start justify-between">
             <div className="flex items-center space-x-2">
-              <Checkbox id={`task-${task.id}`} checked={task.completed} />
+              <Checkbox
+                id={`task-${task.id}`}
+                checked={task.completed}
+                onCheckedChange={() => handleToggleTaskComplete(task.id)}
+              />
               <div>
                 <h4
                   className={`font-medium ${task.completed ? "line-through text-gray-500" : ""}`}
@@ -195,11 +364,87 @@ const TaskManagement = () => {
                 type="search"
                 placeholder="Search tasks..."
                 className="pl-8 w-[250px]"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <Button variant="outline" size="icon">
-              <Filter className="h-4 w-4" />
-            </Button>
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <Filter className="h-4 w-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80">
+                <div className="grid gap-4">
+                  <div className="space-y-2">
+                    <h4 className="font-medium leading-none">Filters</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Filter tasks by status, priority, or project.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <div className="grid grid-cols-3 items-center gap-4">
+                      <Label htmlFor="status-filter">Status</Label>
+                      <Select
+                        value={statusFilter}
+                        onValueChange={setStatusFilter}
+                      >
+                        <SelectTrigger className="col-span-2 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="todo">To Do</SelectItem>
+                          <SelectItem value="in-progress">
+                            In Progress
+                          </SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-3 items-center gap-4">
+                      <Label htmlFor="priority-filter">Priority</Label>
+                      <Select
+                        value={priorityFilter}
+                        onValueChange={setPriorityFilter}
+                      >
+                        <SelectTrigger className="col-span-2 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-3 items-center gap-4">
+                      <Label htmlFor="project-filter">Project</Label>
+                      <Select
+                        value={projectFilter}
+                        onValueChange={setProjectFilter}
+                      >
+                        <SelectTrigger className="col-span-2 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          {projects.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <Button onClick={clearFilters} variant="outline" size="sm">
+                    Clear Filters
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="flex items-center space-x-2">
             <Tabs
@@ -262,13 +507,16 @@ const TaskManagement = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {allTasks.map((task) => (
+                  {filteredTasks.map((task) => (
                     <tr key={task.id} className="border-b">
                       <td className="p-2">
                         <div className="flex items-center">
                           <Checkbox
                             id={`list-task-${task.id}`}
                             checked={task.completed}
+                            onCheckedChange={() =>
+                              handleToggleTaskComplete(task.id)
+                            }
                           />
                           {task.status === "completed" && (
                             <CheckCircle2 className="ml-2 h-4 w-4 text-green-500" />
@@ -326,15 +574,37 @@ const TaskManagement = () => {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="task-title">Title</Label>
-              <Input id="task-title" placeholder="Task title" />
+              <Input
+                id="task-title"
+                placeholder="Task title"
+                value={newTaskForm.title}
+                onChange={(e) =>
+                  setNewTaskForm((prev) => ({ ...prev, title: e.target.value }))
+                }
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="task-description">Description</Label>
-              <Textarea id="task-description" placeholder="Task description" />
+              <Textarea
+                id="task-description"
+                placeholder="Task description"
+                value={newTaskForm.description}
+                onChange={(e) =>
+                  setNewTaskForm((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="task-project">Project</Label>
-              <Select>
+              <Select
+                value={newTaskForm.project}
+                onValueChange={(value) =>
+                  setNewTaskForm((prev) => ({ ...prev, project: value }))
+                }
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
@@ -350,7 +620,12 @@ const TaskManagement = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="task-priority">Priority</Label>
-                <Select>
+                <Select
+                  value={newTaskForm.priority}
+                  onValueChange={(value: "low" | "medium" | "high") =>
+                    setNewTaskForm((prev) => ({ ...prev, priority: value }))
+                  }
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select priority" />
                   </SelectTrigger>
@@ -381,7 +656,15 @@ const TaskManagement = () => {
                     <Calendar
                       mode="single"
                       selected={selectedDate}
-                      onSelect={setSelectedDate}
+                      onSelect={(date) => {
+                        setSelectedDate(date);
+                        if (date) {
+                          setNewTaskForm((prev) => ({
+                            ...prev,
+                            dueDate: date,
+                          }));
+                        }
+                      }}
                       initialFocus
                     />
                   </PopoverContent>
@@ -392,13 +675,21 @@ const TaskManagement = () => {
           <div className="flex justify-end space-x-2">
             <Button
               variant="outline"
-              onClick={() => setNewTaskDialogOpen(false)}
+              onClick={() => {
+                setNewTaskDialogOpen(false);
+                setNewTaskForm({
+                  title: "",
+                  description: "",
+                  project: "",
+                  priority: "medium",
+                  dueDate: new Date(),
+                });
+                setSelectedDate(new Date());
+              }}
             >
               Cancel
             </Button>
-            <Button onClick={() => setNewTaskDialogOpen(false)}>
-              Create Task
-            </Button>
+            <Button onClick={handleCreateTask}>Create Task</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -415,26 +706,47 @@ const TaskManagement = () => {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="project-name">Project Name</Label>
-              <Input id="project-name" placeholder="Project name" />
+              <Input
+                id="project-name"
+                placeholder="Project name"
+                value={newProjectForm.name}
+                onChange={(e) =>
+                  setNewProjectForm((prev) => ({
+                    ...prev,
+                    name: e.target.value,
+                  }))
+                }
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="project-description">Description</Label>
               <Textarea
                 id="project-description"
                 placeholder="Project description"
+                value={newProjectForm.description}
+                onChange={(e) =>
+                  setNewProjectForm((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
               />
             </div>
           </div>
           <div className="flex justify-end space-x-2">
             <Button
               variant="outline"
-              onClick={() => setNewProjectDialogOpen(false)}
+              onClick={() => {
+                setNewProjectDialogOpen(false);
+                setNewProjectForm({
+                  name: "",
+                  description: "",
+                });
+              }}
             >
               Cancel
             </Button>
-            <Button onClick={() => setNewProjectDialogOpen(false)}>
-              Create Project
-            </Button>
+            <Button onClick={handleCreateProject}>Create Project</Button>
           </div>
         </DialogContent>
       </Dialog>

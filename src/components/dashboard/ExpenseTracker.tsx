@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -36,8 +36,28 @@ import {
   Search,
   Download,
   Filter,
+  FileText,
+  Calendar,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/components/ui/use-toast";
 
 interface Expense {
   id: string;
@@ -50,13 +70,34 @@ interface Expense {
 }
 
 const ExpenseTracker = ({
-  expenses = mockExpenses,
+  expenses: initialExpenses = mockExpenses,
 }: {
   expenses?: Expense[];
 }) => {
+  const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
   const [activeTab, setActiveTab] = useState("add-expense");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  // Form state for adding expenses
+  const [newExpense, setNewExpense] = useState({
+    amount: "",
+    date: new Date().toISOString().split("T")[0],
+    category: "",
+    description: "",
+  });
+
+  // Filter state
+  const [dateRange, setDateRange] = useState({
+    from: "",
+    to: "",
+  });
+  const [statusFilter, setStatusFilter] = useState("");
 
   // Calculate total expenses by category for the chart
   const expensesByCategory: Record<string, number> = {};
@@ -77,13 +118,154 @@ const ExpenseTracker = ({
     const matchesCategory =
       selectedCategory === "" || expense.category === selectedCategory;
 
-    return matchesSearch && matchesCategory;
+    const matchesStatus =
+      statusFilter === "" || expense.status === statusFilter;
+
+    const matchesDateRange =
+      (dateRange.from === "" || expense.date >= dateRange.from) &&
+      (dateRange.to === "" || expense.date <= dateRange.to);
+
+    return (
+      matchesSearch && matchesCategory && matchesStatus && matchesDateRange
+    );
   });
 
   const totalExpenses = expenses.reduce(
     (sum, expense) => sum + expense.amount,
     0,
   );
+
+  // Add expense function
+  const handleAddExpense = () => {
+    if (!newExpense.amount || !newExpense.category || !newExpense.description) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const expense: Expense = {
+      id: Date.now().toString(),
+      date: newExpense.date,
+      category: newExpense.category,
+      amount: parseFloat(newExpense.amount),
+      description: newExpense.description,
+      status: "pending",
+    };
+
+    setExpenses([expense, ...expenses]);
+    setNewExpense({
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+      category: "",
+      description: "",
+    });
+
+    toast({
+      title: "Success",
+      description: "Expense added successfully",
+    });
+  };
+
+  // File upload function
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["image/jpeg", "image/png", "application/pdf"];
+    if (!allowedTypes.includes(file.type)) {
+      toast({
+        title: "Error",
+        description: "Please upload a JPG, PNG, or PDF file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: "Error",
+        description: "File size must be less than 10MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    // Simulate upload progress
+    const interval = setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setIsUploading(false);
+          toast({
+            title: "Success",
+            description: "Receipt uploaded and processed successfully",
+          });
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 200);
+  };
+
+  // Export function
+  const handleExport = (format: "csv" | "pdf") => {
+    const data = filteredExpenses.map((expense) => ({
+      Date: expense.date,
+      Category: expense.category,
+      Description: expense.description,
+      Amount: expense.amount,
+      Status: expense.status,
+    }));
+
+    if (format === "csv") {
+      const csvContent = [
+        Object.keys(data[0] || {}).join(","),
+        ...data.map((row) => Object.values(row).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `expenses-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    toast({
+      title: "Success",
+      description: `Expenses exported as ${format.toUpperCase()}`,
+    });
+  };
+
+  // Apply filters function
+  const applyFilters = () => {
+    setFilterDialogOpen(false);
+    toast({
+      title: "Filters Applied",
+      description: "Expense list has been filtered",
+    });
+  };
+
+  // Clear filters function
+  const clearFilters = () => {
+    setSelectedCategory("");
+    setSearchQuery("");
+    setDateRange({ from: "", to: "" });
+    setStatusFilter("");
+    toast({
+      title: "Filters Cleared",
+      description: "All filters have been removed",
+    });
+  };
 
   return (
     <Card className="w-full bg-white">
@@ -96,14 +278,97 @@ const ExpenseTracker = ({
             </CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <Filter className="h-4 w-4 mr-2" />
-              Filter
-            </Button>
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
+            <Dialog open={filterDialogOpen} onOpenChange={setFilterDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Filter className="h-4 w-4 mr-2" />
+                  Filter
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Filter Expenses</DialogTitle>
+                  <DialogDescription>
+                    Apply filters to narrow down your expense list
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="date-from">From Date</Label>
+                      <Input
+                        id="date-from"
+                        type="date"
+                        value={dateRange.from}
+                        onChange={(e) =>
+                          setDateRange((prev) => ({
+                            ...prev,
+                            from: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="date-to">To Date</Label>
+                      <Input
+                        id="date-to"
+                        type="date"
+                        value={dateRange.to}
+                        onChange={(e) =>
+                          setDateRange((prev) => ({
+                            ...prev,
+                            to: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="status-filter">Status</Label>
+                    <Select
+                      value={statusFilter}
+                      onValueChange={setStatusFilter}
+                    >
+                      <SelectTrigger id="status-filter">
+                        <SelectValue placeholder="All Statuses" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">All Statuses</SelectItem>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="approved">Approved</SelectItem>
+                        <SelectItem value="rejected">Rejected</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={clearFilters}>
+                    Clear All
+                  </Button>
+                  <Button onClick={applyFilters}>Apply Filters</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>Export Format</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => handleExport("csv")}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("pdf")}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Export as PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </CardHeader>
@@ -118,45 +383,80 @@ const ExpenseTracker = ({
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="expense-amount">Amount</Label>
-                  <Input id="expense-amount" type="number" placeholder="0.00" />
+                  <Label htmlFor="expense-amount">Amount *</Label>
+                  <Input
+                    id="expense-amount"
+                    type="number"
+                    placeholder="0.00"
+                    value={newExpense.amount}
+                    onChange={(e) =>
+                      setNewExpense((prev) => ({
+                        ...prev,
+                        amount: e.target.value,
+                      }))
+                    }
+                  />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="expense-date">Date</Label>
-                  <Input id="expense-date" type="date" />
+                  <Label htmlFor="expense-date">Date *</Label>
+                  <Input
+                    id="expense-date"
+                    type="date"
+                    value={newExpense.date}
+                    onChange={(e) =>
+                      setNewExpense((prev) => ({
+                        ...prev,
+                        date: e.target.value,
+                      }))
+                    }
+                  />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="expense-category">Category</Label>
-                  <Select>
+                  <Label htmlFor="expense-category">Category *</Label>
+                  <Select
+                    value={newExpense.category}
+                    onValueChange={(value) =>
+                      setNewExpense((prev) => ({ ...prev, category: value }))
+                    }
+                  >
                     <SelectTrigger id="expense-category">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="office">Office Supplies</SelectItem>
-                      <SelectItem value="travel">Travel</SelectItem>
-                      <SelectItem value="meals">
+                      <SelectItem value="Office Supplies">
+                        Office Supplies
+                      </SelectItem>
+                      <SelectItem value="Travel">Travel</SelectItem>
+                      <SelectItem value="Meals & Entertainment">
                         Meals & Entertainment
                       </SelectItem>
-                      <SelectItem value="software">
+                      <SelectItem value="Software">
                         Software & Subscriptions
                       </SelectItem>
-                      <SelectItem value="equipment">Equipment</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="Equipment">Equipment</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="expense-description">Description</Label>
+                  <Label htmlFor="expense-description">Description *</Label>
                   <Textarea
                     id="expense-description"
                     placeholder="Enter expense details"
+                    value={newExpense.description}
+                    onChange={(e) =>
+                      setNewExpense((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
                   />
                 </div>
 
-                <Button className="w-full">
+                <Button className="w-full" onClick={handleAddExpense}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Expense
                 </Button>
@@ -175,8 +475,20 @@ const ExpenseTracker = ({
                   <p className="text-sm text-muted-foreground">
                     JPG, PNG or PDF, up to 10MB
                   </p>
-                  <Button variant="outline" className="mt-4">
-                    Select File
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    variant="outline"
+                    className="mt-4"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                  >
+                    {isUploading ? "Uploading..." : "Select File"}
                   </Button>
                 </div>
 
@@ -185,9 +497,13 @@ const ExpenseTracker = ({
                     AI Receipt Processing
                   </p>
                   <div className="flex items-center">
-                    <Progress value={0} className="h-2 flex-1" />
+                    <Progress value={uploadProgress} className="h-2 flex-1" />
                     <span className="text-xs text-muted-foreground ml-2">
-                      Ready
+                      {isUploading
+                        ? `${uploadProgress}%`
+                        : uploadProgress === 100
+                          ? "Complete"
+                          : "Ready"}
                     </span>
                   </div>
                 </div>
